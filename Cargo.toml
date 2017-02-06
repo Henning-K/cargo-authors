@@ -1,6 +1,17 @@
 [package]
 name = "cargo-authors"
-version = "0.1.0"
+version = "0.0.0"
 authors = ["Henning-K <henning.kowalk962@web.de>"]
+
+description = "Placeholder for now. Actual crate coming soon(tm)"
+repository = "https://github.com/Henning-K/cargo-authors"
+readme = "README.md"
+
+keywords = ["cargo", "authors"]
+
+categories = ["command-line-utilities"]
+
+license = "MIT"
+license-file = "LICENSE"
 
 [dependencies]
