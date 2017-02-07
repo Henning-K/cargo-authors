@@ -9,9 +9,6 @@ readme = "README.md"
 
 keywords = ["cargo", "authors"]
 
-categories = ["command-line-utilities"]
-
 license = "MIT"
-license-file = "LICENSE"
 
 [dependencies]
