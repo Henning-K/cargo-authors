@@ -9,6 +9,6 @@ readme = "README.md"
 
 keywords = ["cargo", "authors"]
 
-license = "MIT"
+license = "MIT/Apache-2.0"
 
 [dependencies]
