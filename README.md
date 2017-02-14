@@ -1,2 +1,3 @@
 # cargo-authors
-Repo for upcoming cargo command "cargo authors", listing all the authors of all the dependencies of your current crate.
+Repo for the cargo subcommand "cargo authors", that lists all the authors
+of all the dependencies of the crate in your current working directory.
