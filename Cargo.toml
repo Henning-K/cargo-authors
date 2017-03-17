@@ -16,3 +16,4 @@ Simply install, then navigate to the directory of a crate and run `cargo authors
 [dependencies]
 cargo = "0.16"
 rustc-serialize = "0.3"
+error-chain = "0.9"

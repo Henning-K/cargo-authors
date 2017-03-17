@@ -1,6 +1,8 @@
 extern crate rustc_serialize;
 extern crate cargo;
 
+#[macro_use] extern crate error_chain;
+
 use cargo::CliResult;
 use cargo::util::{Config, CargoResult};
 use cargo::core::Workspace;
@@ -9,12 +11,16 @@ use cargo::ops::{self, Packages};
 use std::path::Path;
 use std::collections::{BTreeMap, HashSet};
 
+mod errors {
+    error_chain! { }
+}
+use errors::*;
 
 struct DependencyAccumulator<'a> {
     config: &'a Config,
 }
 
-type Aggregate = Option<BTreeMap<String, HashSet<String>>>;
+type Aggregate = Result<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
     fn new(c: &'a Config) -> Self {
@@ -22,25 +28,29 @@ impl<'a> DependencyAccumulator<'a> {
     }
 
     fn accumulate(&self) -> Aggregate {
-        let local_root = Path::new(".").canonicalize().unwrap();
+        let local_root = Path::new(".").canonicalize()
+            .chain_err(|| "Failed to canonicalize local root path.")?;
         let local_root = local_root.as_path();
         let ws_path = local_root.clone().join("Cargo.toml");
-        let ws = Workspace::new(&ws_path, &self.config).unwrap();
+        let ws = Workspace::new(&ws_path, &self.config)
+            .chain_err(|| "Failed creating new Workspace instance. Maybe you're not in a directory with a valid Cargo.toml file?")?;
 
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs because the
         // the visibility of the result returned from metadata_full() hindered evaluation
-        let specs = Packages::All.into_package_id_specs(&ws).unwrap();
+        let specs = Packages::All.into_package_id_specs(&ws)
+            .chain_err(|| "Failed getting list of packages.")?;
         let deps = ops::resolve_ws_precisely(&ws,
                                              None,
                                              &vec![],
                                              false,
                                              false,
-                                             &specs).unwrap();
+                                             &specs)
+            .chain_err(|| "Failed resolving Workspace.")?;
         let (packages, _resolve) = deps;
 
         let packages = packages.package_ids()
             .map(|i| packages.get(i).map(|p| p.clone()))
-            .collect::<CargoResult<Vec<_>>>().unwrap();
+            .collect::<CargoResult<Vec<_>>>().chain_err(|| "Failed collecting packages from package IDs.")?;
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
@@ -53,7 +63,7 @@ impl<'a> DependencyAccumulator<'a> {
              }
         }
 
-        Some(result)
+        Ok(result)
     }
 }
 
@@ -62,10 +72,28 @@ impl<'a> DependencyAccumulator<'a> {
 struct Options {}
 
 fn real_main(_options: Options, config: &Config) -> CliResult<Option<()>> {
-    let aggregate = DependencyAccumulator::new(config).accumulate().unwrap();
+    let aggregate = match DependencyAccumulator::new(config).accumulate() {
+        Err(ref e) => {
+            println!("error: {}", e);
 
-    let max_author_len = aggregate.keys().map(|e| e.len()).max().expect("No authors found.");
+            for e in e.iter().skip(1) {
+                println!("caused by: {}", e);
+            }
+
+            if let Some(backtrace) = e.backtrace() {
+                println!("backtrace: {:?}", backtrace);
+            }
+
+            ::std::process::exit(1);
+        },
+        Ok(agg) => agg,
+    };
+
+    let max_author_len = aggregate.keys().map(|e| e.len()).max()
+        .expect("No authors found.");
+    
     println!("Authors and their respective crates for this crate:\n\n\n");
+    
     for (author, crates) in aggregate {
         println!("{:<N$}:{:?}", author, crates, N = max_author_len);
     }
