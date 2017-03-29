@@ -92,7 +92,7 @@ fn real_main(_options: Options, config: &Config) -> CliResult<Option<()>> {
     let max_author_len = aggregate.keys().map(|e| e.len()).max()
         .expect("No authors found.");
 
-    println!("Authors and their respective crates for this crate:\n\n\n");
+    println!("Authors and their respective crates for this crate:\n");
 
     for (author, crates) in aggregate {
         println!("{:<N$}:{:?}", author, crates, N = max_author_len);
