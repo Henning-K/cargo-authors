@@ -58,7 +58,7 @@ impl<'a> DependencyAccumulator<'a> {
              let name = package.name();
              let authors = package.authors().clone();
              for auth in authors {
-                 let crates = result.entry(auth).or_insert(HashSet::new());
+                 let crates = result.entry(auth).or_insert_with(HashSet::new);
                  crates.insert(name.to_string());
              }
         }
