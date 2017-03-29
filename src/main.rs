@@ -31,7 +31,7 @@ impl<'a> DependencyAccumulator<'a> {
         let local_root = Path::new(".").canonicalize()
             .chain_err(|| "Failed to canonicalize local root path.")?;
         let local_root = local_root.as_path();
-        let ws_path = local_root.clone().join("Cargo.toml");
+        let ws_path = local_root.join("Cargo.toml");
         let ws = Workspace::new(&ws_path, self.config)
             .chain_err(|| "Failed creating new Workspace instance. Maybe you're not in a directory with a valid Cargo.toml file?")?;
 
