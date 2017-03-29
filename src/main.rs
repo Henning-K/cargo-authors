@@ -41,7 +41,7 @@ impl<'a> DependencyAccumulator<'a> {
             .chain_err(|| "Failed getting list of packages.")?;
         let deps = ops::resolve_ws_precisely(&ws,
                                              None,
-                                             &vec![],
+                                             &[],
                                              false,
                                              false,
                                              &specs)
