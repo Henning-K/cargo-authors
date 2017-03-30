@@ -4,9 +4,7 @@ of all the dependencies of the crate in your current working directory.
 
 ## Example Output for this crate ##
 
-Authors and their respective crates for this crate:
-
-
+    Authors and their respective crates for this crate:
 
     Aaron Turon <aturon@mozilla.com>       :{"crossbeam"}
     Alex Crichton <alex@alexcrichton.com>  :{"cfg-if", "flate2", "git2-curl", "libz-sys", "miniz-sys", "openssl-probe", "net2", "curl-sys", "libgit2-sys", "miow", "rustc-demangle", "openssl-sys", "gcc", "toml", "curl", "tar", "libssh2-sys", "cargo", "git2", "filetime", "pkg-config", "backtrace-sys", "crates-io", "backtrace", "cmake"}

@@ -31,8 +31,8 @@ impl<'a> DependencyAccumulator<'a> {
         let local_root = Path::new(".").canonicalize()
             .chain_err(|| "Failed to canonicalize local root path.")?;
         let local_root = local_root.as_path();
-        let ws_path = local_root.clone().join("Cargo.toml");
-        let ws = Workspace::new(&ws_path, &self.config)
+        let ws_path = local_root.join("Cargo.toml");
+        let ws = Workspace::new(&ws_path, self.config)
             .chain_err(|| "Failed creating new Workspace instance. Maybe you're not in a directory with a valid Cargo.toml file?")?;
 
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs because the
@@ -41,7 +41,7 @@ impl<'a> DependencyAccumulator<'a> {
             .chain_err(|| "Failed getting list of packages.")?;
         let deps = ops::resolve_ws_precisely(&ws,
                                              None,
-                                             &vec![],
+                                             &[],
                                              false,
                                              false,
                                              &specs)
@@ -58,7 +58,7 @@ impl<'a> DependencyAccumulator<'a> {
              let name = package.name();
              let authors = package.authors().clone();
              for auth in authors {
-                 let crates = result.entry(auth).or_insert(HashSet::new());
+                 let crates = result.entry(auth).or_insert_with(HashSet::new);
                  crates.insert(name.to_string());
              }
         }
@@ -91,9 +91,9 @@ fn real_main(_options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let max_author_len = aggregate.keys().map(|e| e.len()).max()
         .expect("No authors found.");
-    
-    println!("Authors and their respective crates for this crate:\n\n\n");
-    
+
+    println!("Authors and their respective crates for this crate:\n");
+
     for (author, crates) in aggregate {
         println!("{:<N$}:{:?}", author, crates, N = max_author_len);
     }
