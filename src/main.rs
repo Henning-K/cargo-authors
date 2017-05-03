@@ -1,7 +1,13 @@
 extern crate rustc_serialize;
+extern crate docopt;
 extern crate cargo;
 
 #[macro_use] extern crate error_chain;
+
+#[macro_use] extern crate serde_derive;
+extern crate serde_json;
+
+use docopt::Docopt;
 
 use cargo::CliResult;
 use cargo::util::{Config, CargoResult, human};
@@ -17,6 +23,29 @@ mod errors {
     error_chain! { }
 }
 use errors::*;
+
+const USAGE: &'static str = r"
+List all authors of all dependencies of the current crate.
+
+Usage:
+  cargo authors [options]
+  cargo authors (-h | --help)
+
+Options:
+  -o --output  Write machine-readable (Json) output to stdout.
+  -h --help    Print this message.
+";
+
+#[derive(Serialize, Deserialize)]
+struct AuthorsResult {
+    entries: BTreeMap<String, HashSet<String>>,
+}
+
+impl AuthorsResult {
+    fn new(v: BTreeMap<String, HashSet<String>>) -> Self {
+        AuthorsResult { entries: v }
+    }
+}
 
 struct DependencyAccumulator<'a> {
     config: &'a Config,
@@ -73,12 +102,12 @@ impl<'a> DependencyAccumulator<'a> {
     }
 }
 
-// This is just to satisfy the signature for the method provided to cargo's
-// "execute[...]" function.
 #[derive(RustcDecodable)]
-struct Options {}
+struct Flags {
+    flag_output: bool,
+}
 
-fn real_main(_options: Options, config: &Config) -> CliResult {
+fn real_main(flags: Flags, config: &Config) -> CliResult {
     let aggregate = match DependencyAccumulator::new(config).accumulate() {
         Err(ref e) => {
             println!("error: {}", e);
@@ -99,10 +128,16 @@ fn real_main(_options: Options, config: &Config) -> CliResult {
     let max_author_len = aggregate.keys().map(|e| e.len()).max()
         .expect("No authors found.");
 
-    println!("Authors and their respective crates for this crate:\n");
+    if flags.flag_output {
+        let ar = AuthorsResult::new(aggregate);
+        let ar_json = serde_json::to_string(&ar).unwrap();
+        println!("{}", ar_json);
+    } else {
+        println!("Authors and their respective crates for this crate:\n");
 
-    for (author, crates) in aggregate {
-        println!("{:<N$}:{:?}", author, crates, N = max_author_len);
+        for (author, crates) in aggregate {
+            println!("{:<N$}:{:?}", author, crates, N = max_author_len);
+        }
     }
 
     Ok(())
@@ -125,14 +160,16 @@ fn main() {
             })
             .collect());
         let rest = &args;
-        cargo::call_main_without_stdin(real_main, &config, r#"
-List all authors of all dependencies of the current crate.
+        
+        let flags = Docopt::new(USAGE)
+            .and_then(|d| 
+                d.argv(rest.into_iter()).help(true).decode::<Flags>()
+            ).unwrap_or_else(|e| {
+                e.exit()
+            }
+        );
 
-Usage: cargo authors [options]
-
-Options:
-    -h, --help      Print this message
-"#, rest, true)
+        real_main(flags, &config)
     })();
 
     match result {

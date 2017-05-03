@@ -1,6 +1,6 @@
 [package]
 name = "cargo-authors"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Henning-K <henning.kowalk962@web.de>"]
 
 license = "MIT/Apache-2.0"
@@ -17,3 +17,7 @@ Simply install, then navigate to the directory of a crate and run `cargo authors
 cargo = "0.18"
 rustc-serialize = "0.3"
 error-chain = "0.10"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+docopt = "0.7"
