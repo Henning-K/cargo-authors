@@ -1,6 +1,6 @@
 [package]
 name = "cargo-authors"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Henning-K <henning.kowalk962@web.de>"]
 
 license = "MIT/Apache-2.0"
