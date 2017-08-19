@@ -5,6 +5,7 @@ authors = ["Henning-K <henning.kowalk962@web.de>"]
 
 license = "MIT/Apache-2.0"
 keywords = ["cargo", "authors", "subcommand"]
+homepage = "https://github.com/Henning-K/cargo-authors"
 repository = "https://github.com/Henning-K/cargo-authors"
 readme = "README.md"
 description = """
