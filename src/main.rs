@@ -1,16 +1,17 @@
-extern crate rustc_serialize;
-extern crate docopt;
 extern crate cargo;
 
-#[macro_use] extern crate error_chain;
+#[macro_use]
+extern crate error_chain;
 
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde_json;
+extern crate docopt;
 
 use docopt::Docopt;
 
 use cargo::CliResult;
-use cargo::util::{Config, CargoResult, human};
+use cargo::util::{Config, CargoResult, CargoError};
 use cargo::core::Workspace;
 use cargo::core::shell::{Verbosity, ColorConfig};
 use cargo::ops::{self, Packages};
@@ -32,8 +33,8 @@ Usage:
   cargo authors (-h | --help)
 
 Options:
-  -o --output  Write machine-readable (Json) output to stdout.
   -h --help    Print this message.
+  --json  Write machine-readable (JSON) output to stdout.
 ";
 
 #[derive(Serialize, Deserialize)]
@@ -102,9 +103,9 @@ impl<'a> DependencyAccumulator<'a> {
     }
 }
 
-#[derive(RustcDecodable)]
+#[derive(Debug, Deserialize)]
 struct Flags {
-    flag_output: bool,
+    flag_json: bool,
 }
 
 fn real_main(flags: Flags, config: &Config) -> CliResult {
@@ -128,7 +129,7 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
     let max_author_len = aggregate.keys().map(|e| e.len()).max()
         .expect("No authors found.");
 
-    if flags.flag_output {
+    if flags.flag_json {
         let ar = AuthorsResult::new(aggregate);
         let ar_json = serde_json::to_string(&ar).unwrap();
         println!("{}", ar_json);
@@ -136,7 +137,9 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
         println!("Authors and their respective crates for this crate:\n");
 
         for (author, crates) in aggregate {
-            println!("{:<N$}:{:?}", author, crates, N = max_author_len);
+            let crates = crates.into_iter().collect::<Vec<String>>();
+            let crates = crates[..].join(", ");
+            println!("{:<N$}: {}", author, crates, N = max_author_len);
         }
     }
 
@@ -155,19 +158,16 @@ fn main() {
     let result = (|| {
         let args: Vec<_> = try!(env::args_os()
             .map(|s| {
-                s.into_string().map_err(|s| 
-                human(format!("invalid unicode in argument: {:?}", s)))
+                s.into_string().map_err(|s| {
+                    CargoError::from(format!("invalid unicode in argument: {:?}", s))
+                })
             })
             .collect());
         let rest = &args;
         
-        let flags = Docopt::new(USAGE)
-            .and_then(|d| 
-                d.argv(rest.into_iter()).help(true).decode::<Flags>()
-            ).unwrap_or_else(|e| {
-                e.exit()
-            }
-        );
+        let flags: Flags = Docopt::new(USAGE)
+            .and_then(|d| d.argv(rest.into_iter()).deserialize())
+            .unwrap_or_else(|e| e.exit());
 
         real_main(flags, &config)
     })();
