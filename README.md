@@ -21,7 +21,7 @@ of all the dependencies of the crate in your current working directory.
     Henning-K <henning.kowalk962@web.de>       : cargo-authors
     Jim McGrath <jimmc2@gmail.com>             : vcpkg
     Jonathan Reem <jonathan.reem@gmail.com>    : unreachable, void
-    Marvin L├Âbel <loebel.marvin@gmail.com>     : lazy_static
+    Marvin Löbel <loebel.marvin@gmail.com>     : lazy_static
     Paul Colomiets <paul@colomiets.name>       : error-chain
     Peter Atashian <retep998@gmail.com>        : ws2_32-sys, advapi32-sys, kernel32-sys, dbghelp-sys, winapi, winapi-build, psapi-sys
     Raph Levien <raph@google.com>              : magenta-sys, magenta
