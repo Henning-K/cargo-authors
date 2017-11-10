@@ -85,8 +85,8 @@ impl<'a> DependencyAccumulator<'a> {
 
         let packages = packages.package_ids()
             .map(|i| packages.get(i).map(|p| p.clone()))
-            .collect::<CargoResult<Vec<_>>>().chain_err(|| 
-            "Failed collecting packages from package IDs.")?;
+            .collect::<CargoResult<Vec<_>>>()
+            .chain_err(|| "Failed collecting packages from package IDs.")?;
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
