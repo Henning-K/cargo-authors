@@ -1,7 +1,7 @@
 extern crate cargo;
 
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
 
 #[macro_use]
 extern crate serde_derive;
@@ -16,15 +16,14 @@ use cargo::core::Workspace;
 use cargo::core::shell::Shell;
 use cargo::ops::{self, Packages};
 
-use std::env;
-use std::path::Path;
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    env, path::Path, collections::{BTreeMap, HashSet}
+};
 
-error_chain! {
-    foreign_links {
-        Cargo(CargoError);
-        Io(::std::io::Error);
-    }
+#[derive(Fail, Debug)]
+#[fail(display = "An argument error occurred.")]
+struct ArgError {
+    detail: String,
 }
 
 const USAGE: &'static str = r"
@@ -56,7 +55,7 @@ struct DependencyAccumulator<'a> {
     ignore: bool,
 }
 
-type Aggregate = Result<BTreeMap<String, HashSet<String>>>;
+type Aggregate = CargoResult<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
     fn new(c: &'a Config, ignore: bool) -> Self {
@@ -74,7 +73,7 @@ impl<'a> DependencyAccumulator<'a> {
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
         // because the visibility of the result returned from metadata_full()
         // hindered evaluation
-        let specs = Packages::All.into_package_id_specs(&ws)?;
+        let specs = Packages::All.to_package_id_specs(&ws)?;
         let deps = ops::resolve_ws_precisely(&ws,
                                              None,
                                              &[],
@@ -116,13 +115,11 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
         Err(ref e) => {
             println!("error: {}", e);
 
-            for e in e.iter().skip(1) {
+            for e in e.iter_causes() {
                 println!("caused by: {}", e);
             }
 
-            if let Some(backtrace) = e.backtrace() {
-                println!("backtrace: {:?}", backtrace);
-            }
+            println!("backtrace: {:?}", e.backtrace());
 
             ::std::process::exit(1);
         },
@@ -158,15 +155,15 @@ fn main() {
     };
 
     let result = (|| {
-        let args: Vec<_> = try!(env::args_os()
+        let args: Vec<_> = env::args_os()
             .map(|s| {
                 s.into_string().map_err(|s| {
-                    CargoError::from(format!("invalid unicode in argument: {:?}", s))
+                    CargoError::from(ArgError { detail: format!("invalid unicode in argument: {:?}", s) })
                 })
             })
-            .collect());
+            .collect::<CargoResult<_>>()?;
         let rest = &args;
-        
+
         let flags: Flags = Docopt::new(USAGE)
             .and_then(|d| d.argv(rest.into_iter()).deserialize())
             .unwrap_or_else(|e| e.exit());
