@@ -30,7 +30,7 @@ const USAGE: &'static str = r"
 List all authors of all dependencies of the current crate.
 
 Usage:
-  cargo authors [options]
+  cargo authors [options] [<path>]
   cargo authors (-h | --help)
 
 Options:
@@ -53,17 +53,18 @@ impl AuthorsResult {
 struct DependencyAccumulator<'a> {
     config: &'a Config,
     ignore: bool,
+    path: &'a str,
 }
 
 type Aggregate = CargoResult<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
-    fn new(c: &'a Config, ignore: bool) -> Self {
-        DependencyAccumulator { config: c, ignore: ignore }
+    fn new(c: &'a Config, ignore: bool, path: &'a str) -> Self {
+        DependencyAccumulator { config: c, ignore: ignore, path: path }
     }
 
     fn accumulate(&self) -> Aggregate {
-        let local_root = Path::new(".").canonicalize()?;
+        let local_root = Path::new(self.path).canonicalize()?;
         let local_root = local_root.as_path();
         let ws_path = local_root.join("Cargo.toml");
         let ws = Workspace::new(&ws_path, self.config)?;
@@ -108,10 +109,12 @@ impl<'a> DependencyAccumulator<'a> {
 struct Flags {
     flag_json: bool,
     flag_ignore_self: bool,
+    arg_path: Option<String>,
 }
 
 fn real_main(flags: Flags, config: &Config) -> CliResult {
-    let aggregate = match DependencyAccumulator::new(config, flags.flag_ignore_self).accumulate() {
+    let arg_path = &flags.arg_path.unwrap_or_else(|| String::from("."));
+    let aggregate = match DependencyAccumulator::new(config, flags.flag_ignore_self, arg_path).accumulate() {
         Err(ref e) => {
             println!("error: {}", e);
 
