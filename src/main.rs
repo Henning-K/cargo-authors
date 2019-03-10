@@ -50,6 +50,7 @@ Options:
   -a --hide-authors     Replace all authors with their respective hashes in the output.
   -e --hide-emails      Replace all emails with their respective hashes in the output.
   -c --hide-crates      Replace all crates with their respective hashes in the output.
+     --by-crate         Show the output grouped by the crate name.
 ";
 
 #[derive(Serialize, Deserialize)]
@@ -131,6 +132,17 @@ impl<'a> DependencyAccumulator<'a> {
             }
         }
 
+        if self.flags.flag_by_crate {
+            let mut result_: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+            for (k, vs) in result.iter() {
+                for v in vs.iter().cloned() {
+                    let authors = result_.entry(v).or_insert_with(HashSet::new);
+                    authors.insert(k.clone());
+                }
+            }
+            result = result_;
+        }
+
         Ok(result)
     }
 }
@@ -138,6 +150,7 @@ impl<'a> DependencyAccumulator<'a> {
 #[derive(Clone, Debug, Deserialize)]
 struct Flags {
     flag_json: bool,
+    flag_by_crate: bool,
     flag_hide_authors: bool,
     flag_hide_emails: bool,
     flag_hide_crates: bool,
