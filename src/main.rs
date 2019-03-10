@@ -1,23 +1,33 @@
 extern crate cargo;
+use cargo::core::shell::Shell;
+use cargo::core::Workspace;
+use cargo::ops::{self, Packages};
+use cargo::util::{CargoError, CargoResult, Config};
+use cargo::CliResult;
 
 #[macro_use]
 extern crate failure;
 
+extern crate regex;
+use regex::Regex;
+
+#[macro_use]
+extern crate lazy_static;
+
+extern crate ripemd160;
+use ripemd160::{Digest, Ripemd160};
+
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
-extern crate docopt;
 
+extern crate docopt;
 use docopt::Docopt;
 
-use cargo::CliResult;
-use cargo::util::{Config, CargoResult, CargoError};
-use cargo::core::Workspace;
-use cargo::core::shell::Shell;
-use cargo::ops::{self, Packages};
-
 use std::{
-    env, path::Path, collections::{BTreeMap, HashSet}
+    collections::{BTreeMap, HashSet},
+    env,
+    path::Path,
 };
 
 #[derive(Fail, Debug)]
@@ -34,9 +44,12 @@ Usage:
   cargo authors (-h | --help)
 
 Options:
-  -h --help         Print this message.
-  -j --json         Write machine-readable (JSON) output to stdout.
-  -i --ignore-self  Don't output author and package name of the current crate.
+  -h --help             Print this message.
+  -j --json             Write machine-readable (JSON) output to stdout.
+  -i --ignore-self      Don't output author and package name of the current crate.
+  -a --hide-authors     Replace all authors with their respective hashes in the output.
+  -e --hide-emails      Replace all emails with their respective hashes in the output.
+  -c --hide-crates      Replace all crates with their respective hashes in the output.
 ";
 
 #[derive(Serialize, Deserialize)]
@@ -50,86 +63,109 @@ impl AuthorsResult {
     }
 }
 
+#[derive(Clone)]
 struct DependencyAccumulator<'a> {
     config: &'a Config,
-    ignore: bool,
-    path: &'a str,
+    flags: Flags,
 }
 
 type Aggregate = CargoResult<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
-    fn new(c: &'a Config, ignore: bool, path: &'a str) -> Self {
-        DependencyAccumulator { config: c, ignore: ignore, path: path }
+    fn new(c: &'a Config, flags: Flags) -> Self {
+        DependencyAccumulator {
+            config: c,
+            flags: flags,
+        }
     }
 
     fn accumulate(&self) -> Aggregate {
-        let local_root = Path::new(self.path).canonicalize()?;
+        lazy_static!{
+            static ref EMAIL_PART: Regex = Regex::new("^(?P<name>.* )<(?P<mail>.*)>$").unwrap();
+        }
+        let path = self.flags.arg_path.clone().unwrap_or_else(|| String::from("."));
+        let local_root = Path::new(path.as_str()).canonicalize()?;
         let local_root = local_root.as_path();
         let ws_path = local_root.join("Cargo.toml");
         let ws = Workspace::new(&ws_path, self.config)?;
 
-        let self_pkg = ws.current()?.name();
+        let self_pkg = ws.current()?.name().as_str();
 
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
         // because the visibility of the result returned from metadata_full()
         // hindered evaluation
         let specs = Packages::All.to_package_id_specs(&ws)?;
-        let deps = ops::resolve_ws_precisely(&ws,
-                                             None,
-                                             &[],
-                                             false,
-                                             false,
-                                             &specs)?;
+        let deps = ops::resolve_ws_precisely(&ws, None, &[], false, false, &specs)?;
         let (packages, _resolve) = deps;
 
-        let packages = packages.package_ids()
+        let packages = packages
+            .package_ids()
             .map(|i| packages.get(i).map(|p| p.clone()))
             .collect::<CargoResult<Vec<_>>>()?;
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
         for package in packages {
-             let name = package.name();
-             if name == self_pkg && self.ignore {
-                 continue;
-             }
-             let authors = package.authors().clone();
-             for auth in authors {
-                 let crates = result.entry(auth).or_insert_with(HashSet::new);
-                 crates.insert(name.to_string());
-             }
+            let name = if self.flags.flag_hide_crates {
+                    format!("{:x}", Ripemd160::digest(package.name().as_bytes()))
+                } else {
+                    package.name().to_string()
+                };
+            if name == self_pkg && self.flags.flag_ignore_self {
+                continue;
+            }
+            let authors = package.authors().into_iter().map(|e| {
+                if self.flags.flag_hide_authors {
+                    format!("{:x}", Ripemd160::digest(e.as_bytes()))
+                } else if self.flags.flag_hide_emails {
+                    EMAIL_PART.replace(e, |caps: &regex::Captures| {
+                        format!("{}<{:x}>", &caps["name"], Ripemd160::digest(&caps["mail"].as_bytes()))
+                    }).into_owned()
+                } else {
+                    e.clone()
+                }
+            });
+            for auth in authors {
+                let crates = result.entry(auth).or_insert_with(HashSet::new);
+                crates.insert(name.to_string());
+            }
         }
 
         Ok(result)
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct Flags {
     flag_json: bool,
+    flag_hide_authors: bool,
+    flag_hide_emails: bool,
+    flag_hide_crates: bool,
     flag_ignore_self: bool,
     arg_path: Option<String>,
 }
 
 fn real_main(flags: Flags, config: &Config) -> CliResult {
-    let arg_path = &flags.arg_path.unwrap_or_else(|| String::from("."));
-    let aggregate = match DependencyAccumulator::new(config, flags.flag_ignore_self, arg_path).accumulate() {
-        Err(ref e) => {
-            println!("error: {}", e);
+    let aggregate =
+        match DependencyAccumulator::new(config, flags.clone()).accumulate() {
+            Err(ref e) => {
+                println!("error: {}", e);
 
-            for e in e.iter_causes() {
-                println!("caused by: {}", e);
+                for e in e.iter_causes() {
+                    println!("caused by: {}", e);
+                }
+
+                println!("backtrace: {:?}", e.backtrace());
+
+                ::std::process::exit(1);
             }
+            Ok(agg) => agg,
+        };
 
-            println!("backtrace: {:?}", e.backtrace());
-
-            ::std::process::exit(1);
-        },
-        Ok(agg) => agg,
-    };
-
-    let max_author_len = aggregate.keys().map(|e| e.len()).max()
+    let max_author_len = aggregate
+        .keys()
+        .map(|e| e.len())
+        .max()
         .expect("No authors found.");
 
     if flags.flag_json {
@@ -161,7 +197,9 @@ fn main() {
         let args: Vec<_> = env::args_os()
             .map(|s| {
                 s.into_string().map_err(|s| {
-                    CargoError::from(ArgError { detail: format!("invalid unicode in argument: {:?}", s) })
+                    CargoError::from(ArgError {
+                        detail: format!("invalid unicode in argument: {:?}", s),
+                    })
                 })
             })
             .collect::<CargoResult<_>>()?;
