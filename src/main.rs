@@ -74,17 +74,18 @@ type Aggregate = CargoResult<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
     fn new(c: &'a Config, flags: Flags) -> Self {
-        DependencyAccumulator {
-            config: c,
-            flags: flags,
-        }
+        DependencyAccumulator { config: c, flags }
     }
 
     fn accumulate(&self) -> Aggregate {
-        lazy_static!{
+        lazy_static! {
             static ref EMAIL_PART: Regex = Regex::new("^(?P<name>.* )<(?P<mail>.*)>$").unwrap();
         }
-        let path = self.flags.arg_path.clone().unwrap_or_else(|| String::from("."));
+        let path = self
+            .flags
+            .arg_path
+            .clone()
+            .unwrap_or_else(|| String::from("."));
         let local_root = Path::new(path.as_str()).canonicalize()?;
         let local_root = local_root.as_path();
         let ws_path = local_root.join("Cargo.toml");
@@ -93,25 +94,24 @@ impl<'a> DependencyAccumulator<'a> {
         let self_pkg = ws.current()?.name().as_str();
 
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
-        // because the visibility of the result returned from metadata_full()
-        // hindered evaluation
+        // because the visibility of the result's (ExportInfo) members returned from
+        // cargo::ops::metadata_full()/output_metadata() hinders evaluation
         let specs = Packages::All.to_package_id_specs(&ws)?;
-        let deps = ops::resolve_ws_precisely(&ws, None, &[], false, false, &specs)?;
-        let (packages, _resolve) = deps;
+        let deps = ops::resolve_ws_precisely(&ws, &[], true, false, &specs)?;
+        let (package_set, _resolve) = deps;
 
-        let packages = packages
-            .package_ids()
-            .map(|i| packages.get(i).map(|p| p.clone()))
-            .collect::<CargoResult<Vec<_>>>()?;
+        let mut packages = HashMap::new();
+        for pkg in package_set.get_many(package_set.package_ids())? {
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
-        for package in packages {
+        for pkg in package_set.get_many(package_set.package_ids())? {
+            let package = pkg.clone();
             let name = if self.flags.flag_hide_crates {
-                    format!("{:x}", Ripemd160::digest(package.name().as_bytes()))
-                } else {
-                    package.name().to_string()
-                };
+                format!("{:x}", Ripemd160::digest(package.name().as_bytes()))
+            } else {
+                package.name().to_string()
+            };
             if name == self_pkg && self.flags.flag_ignore_self {
                 continue;
             }
@@ -119,9 +119,15 @@ impl<'a> DependencyAccumulator<'a> {
                 if self.flags.flag_hide_authors {
                     format!("{:x}", Ripemd160::digest(e.as_bytes()))
                 } else if self.flags.flag_hide_emails {
-                    EMAIL_PART.replace(e, |caps: &regex::Captures| {
-                        format!("{}<{:x}>", &caps["name"], Ripemd160::digest(&caps["mail"].as_bytes()))
-                    }).into_owned()
+                    EMAIL_PART
+                        .replace(e, |caps: &regex::Captures| {
+                            format!(
+                                "{}<{:x}>",
+                                &caps["name"],
+                                Ripemd160::digest(&caps["mail"].as_bytes())
+                            )
+                        })
+                        .into_owned()
                 } else {
                     e.clone()
                 }
@@ -159,21 +165,20 @@ struct Flags {
 }
 
 fn real_main(flags: Flags, config: &Config) -> CliResult {
-    let aggregate =
-        match DependencyAccumulator::new(config, flags.clone()).accumulate() {
-            Err(ref e) => {
-                println!("error: {}", e);
+    let aggregate = match DependencyAccumulator::new(config, flags.clone()).accumulate() {
+        Err(ref e) => {
+            println!("error: {}", e);
 
-                for e in e.iter_causes() {
-                    println!("caused by: {}", e);
-                }
-
-                println!("backtrace: {:?}", e.backtrace());
-
-                ::std::process::exit(1);
+            for e in e.iter_causes() {
+                println!("caused by: {}", e);
             }
-            Ok(agg) => agg,
-        };
+
+            println!("backtrace: {:?}", e.backtrace());
+
+            ::std::process::exit(1);
+        }
+        Ok(agg) => agg,
+    };
 
     let max_author_len = aggregate
         .keys()
