@@ -2,7 +2,7 @@ extern crate cargo;
 use cargo::core::shell::Shell;
 use cargo::core::Workspace;
 use cargo::ops::{self, Packages};
-use cargo::util::{CargoError, CargoResult, Config};
+use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
 
 #[macro_use]
@@ -17,9 +17,8 @@ extern crate lazy_static;
 extern crate ripemd160;
 use ripemd160::{Digest, Ripemd160};
 
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
+extern crate serde;
+use serde::{Deserialize, Serialize};
 
 extern crate docopt;
 use docopt::Docopt;
@@ -30,13 +29,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Fail, Debug)]
-#[fail(display = "An argument error occurred.")]
-struct ArgError {
-    detail: String,
-}
-
-const USAGE: &'static str = r"
+const USAGE: &str = r"
 List all authors of all dependencies of the current crate.
 
 Usage:
@@ -99,9 +92,6 @@ impl<'a> DependencyAccumulator<'a> {
         let specs = Packages::All.to_package_id_specs(&ws)?;
         let deps = ops::resolve_ws_precisely(&ws, &[], true, false, &specs)?;
         let (package_set, _resolve) = deps;
-
-        let mut packages = HashMap::new();
-        for pkg in package_set.get_many(package_set.package_ids())? {
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
@@ -115,7 +105,7 @@ impl<'a> DependencyAccumulator<'a> {
             if name == self_pkg && self.flags.flag_ignore_self {
                 continue;
             }
-            let authors = package.authors().into_iter().map(|e| {
+            let authors = package.authors().iter().map(|e| {
                 if self.flags.flag_hide_authors {
                     format!("{:x}", Ripemd160::digest(e.as_bytes()))
                 } else if self.flags.flag_hide_emails {
@@ -215,16 +205,17 @@ fn main() {
         let args: Vec<_> = env::args_os()
             .map(|s| {
                 s.into_string().map_err(|s| {
-                    CargoError::from(ArgError {
-                        detail: format!("invalid unicode in argument: {:?}", s),
-                    })
+                    CliError::new(
+                        failure::format_err!("invalid argument detected: {:?}", s),
+                        1334,
+                    )
                 })
             })
-            .collect::<CargoResult<_>>()?;
+            .collect::<Result<_, CliError>>()?;
         let rest = &args;
 
         let flags: Flags = Docopt::new(USAGE)
-            .and_then(|d| d.argv(rest.into_iter()).deserialize())
+            .and_then(|d| d.argv(rest.iter()).deserialize())
             .unwrap_or_else(|e| e.exit());
 
         real_main(flags, &config)
