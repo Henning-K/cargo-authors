@@ -1,6 +1,6 @@
 extern crate cargo;
-use cargo::core::shell::Shell;
 use cargo::core::Workspace;
+use cargo::core::{resolver::ResolveOpts, shell::Shell};
 use cargo::ops::{self, Packages};
 use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
@@ -90,7 +90,7 @@ impl<'a> DependencyAccumulator<'a> {
         // because the visibility of the result's (ExportInfo) members returned from
         // cargo::ops::metadata_full()/output_metadata() hinders evaluation
         let specs = Packages::All.to_package_id_specs(&ws)?;
-        let deps = ops::resolve_ws_precisely(&ws, &[], true, false, &specs)?;
+        let deps = ops::resolve_ws_with_opts(&ws, ResolveOpts::everything(), &specs)?;
         let (package_set, _resolve) = deps;
         // here ends the ripped code
 
