@@ -1,12 +1,11 @@
 extern crate cargo;
+use cargo::core::compiler::RustcTargetData;
+use cargo::core::resolver::{ForceAllTargets, HasDevUnits};
 use cargo::core::Workspace;
 use cargo::core::{resolver::ResolveOpts, shell::Shell};
 use cargo::ops::{self, Packages};
 use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
-
-#[macro_use]
-extern crate failure;
 
 extern crate regex;
 use regex::Regex;
@@ -89,8 +88,17 @@ impl<'a> DependencyAccumulator<'a> {
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
         // because the visibility of the result's (ExportInfo) members returned from
         // cargo::ops::metadata_full()/output_metadata() hinders evaluation
+        let target_data = RustcTargetData::new(&ws, &[])?;
         let specs = Packages::All.to_package_id_specs(&ws)?;
-        let deps = ops::resolve_ws_with_opts(&ws, ResolveOpts::everything(), &specs)?;
+        let deps = ops::resolve_ws_with_opts(
+            &ws,
+            &target_data,
+            &[],
+            &ResolveOpts::everything(),
+            &specs,
+            HasDevUnits::Yes,
+            ForceAllTargets::Yes,
+        )?;
         let package_set = deps.pkg_set;
         // here ends the ripped code
 
@@ -159,11 +167,12 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
         Err(ref e) => {
             println!("error: {}", e);
 
-            for e in e.iter_causes() {
+            for e in e.chain() {
                 println!("caused by: {}", e);
             }
 
-            println!("backtrace: {:?}", e.backtrace());
+            // Nightly-only.
+            // println!("backtrace: {:?}", e.backtrace());
 
             ::std::process::exit(1);
         }
@@ -205,10 +214,7 @@ fn main() {
         let args: Vec<_> = env::args_os()
             .map(|s| {
                 s.into_string().map_err(|s| {
-                    CliError::new(
-                        failure::format_err!("invalid argument detected: {:?}", s),
-                        1334,
-                    )
+                    CliError::new(anyhow::anyhow!("invalid argument detected: {:?}", s), 1334)
                 })
             })
             .collect::<Result<_, CliError>>()?;
