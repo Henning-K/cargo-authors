@@ -1,18 +1,14 @@
 extern crate cargo;
-use cargo::core::shell::Shell;
+use cargo::core::compiler::RustcTargetData;
+use cargo::core::resolver::{ForceAllTargets, HasDevUnits};
 use cargo::core::Workspace;
+use cargo::core::{resolver::ResolveOpts, shell::Shell};
 use cargo::ops::{self, Packages};
 use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
 
-#[macro_use]
-extern crate failure;
-
-extern crate regex;
-use regex::Regex;
-
-#[macro_use]
-extern crate lazy_static;
+extern crate cargo_author;
+use cargo_author::Author;
 
 extern crate ripemd160;
 use ripemd160::{Digest, Ripemd160};
@@ -71,9 +67,6 @@ impl<'a> DependencyAccumulator<'a> {
     }
 
     fn accumulate(&self) -> Aggregate {
-        lazy_static! {
-            static ref EMAIL_PART: Regex = Regex::new("^(?P<name>.* )<(?P<mail>.*)>$").unwrap();
-        }
         let path = self
             .flags
             .arg_path
@@ -89,9 +82,18 @@ impl<'a> DependencyAccumulator<'a> {
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
         // because the visibility of the result's (ExportInfo) members returned from
         // cargo::ops::metadata_full()/output_metadata() hinders evaluation
+        let target_data = RustcTargetData::new(&ws, &[])?;
         let specs = Packages::All.to_package_id_specs(&ws)?;
-        let deps = ops::resolve_ws_precisely(&ws, &[], true, false, &specs)?;
-        let (package_set, _resolve) = deps;
+        let deps = ops::resolve_ws_with_opts(
+            &ws,
+            &target_data,
+            &[],
+            &ResolveOpts::everything(),
+            &specs,
+            HasDevUnits::Yes,
+            ForceAllTargets::Yes,
+        )?;
+        let package_set = deps.pkg_set;
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
@@ -109,15 +111,21 @@ impl<'a> DependencyAccumulator<'a> {
                 if self.flags.flag_hide_authors {
                     format!("{:x}", Ripemd160::digest(e.as_bytes()))
                 } else if self.flags.flag_hide_emails {
-                    EMAIL_PART
-                        .replace(e, |caps: &regex::Captures| {
-                            format!(
-                                "{}<{:x}>",
-                                &caps["name"],
-                                Ripemd160::digest(&caps["mail"].as_bytes())
-                            )
-                        })
-                        .into_owned()
+                    let author = Author::new(e);
+                    format!(
+                        "{}{}{}",
+                        author.name.as_ref().map(|s| s.as_str()).unwrap_or_default(),
+                        if author.name.is_some() && author.email.is_some() {
+                            " "
+                        } else {
+                            ""
+                        },
+                        author
+                            .email
+                            .as_ref()
+                            .map(|s| format!("<{:x}>", Ripemd160::digest(s.as_bytes())))
+                            .unwrap_or_default()
+                    )
                 } else {
                     e.clone()
                 }
@@ -159,11 +167,12 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
         Err(ref e) => {
             println!("error: {}", e);
 
-            for e in e.iter_causes() {
+            for e in e.chain() {
                 println!("caused by: {}", e);
             }
 
-            println!("backtrace: {:?}", e.backtrace());
+            // Nightly-only.
+            // println!("backtrace: {:?}", e.backtrace());
 
             ::std::process::exit(1);
         }
@@ -205,10 +214,7 @@ fn main() {
         let args: Vec<_> = env::args_os()
             .map(|s| {
                 s.into_string().map_err(|s| {
-                    CliError::new(
-                        failure::format_err!("invalid argument detected: {:?}", s),
-                        1334,
-                    )
+                    CliError::new(anyhow::anyhow!("invalid argument detected: {:?}", s), 1334)
                 })
             })
             .collect::<Result<_, CliError>>()?;
