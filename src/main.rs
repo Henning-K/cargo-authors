@@ -7,11 +7,8 @@ use cargo::ops::{self, Packages};
 use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
 
-extern crate regex;
-use regex::Regex;
-
-#[macro_use]
-extern crate lazy_static;
+extern crate cargo_author;
+use cargo_author::Author;
 
 extern crate ripemd160;
 use ripemd160::{Digest, Ripemd160};
@@ -70,9 +67,6 @@ impl<'a> DependencyAccumulator<'a> {
     }
 
     fn accumulate(&self) -> Aggregate {
-        lazy_static! {
-            static ref EMAIL_PART: Regex = Regex::new("^(?P<name>.* )<(?P<mail>.*)>$").unwrap();
-        }
         let path = self
             .flags
             .arg_path
@@ -117,15 +111,21 @@ impl<'a> DependencyAccumulator<'a> {
                 if self.flags.flag_hide_authors {
                     format!("{:x}", Ripemd160::digest(e.as_bytes()))
                 } else if self.flags.flag_hide_emails {
-                    EMAIL_PART
-                        .replace(e, |caps: &regex::Captures| {
-                            format!(
-                                "{}<{:x}>",
-                                &caps["name"],
-                                Ripemd160::digest(&caps["mail"].as_bytes())
-                            )
-                        })
-                        .into_owned()
+                    let author = Author::new(e);
+                    format!(
+                        "{}{}{}",
+                        author.name.as_ref().map(|s| s.as_str()).unwrap_or_default(),
+                        if author.name.is_some() && author.email.is_some() {
+                            " "
+                        } else {
+                            ""
+                        },
+                        author
+                            .email
+                            .as_ref()
+                            .map(|s| format!("<{:x}>", Ripemd160::digest(s.as_bytes())))
+                            .unwrap_or_default()
+                    )
                 } else {
                     e.clone()
                 }

@@ -152,9 +152,9 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "cargo",
+ "cargo_author",
  "docopt",
  "lazy_static",
- "regex",
  "ripemd160",
  "serde",
  "serde_json",
@@ -167,6 +167,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0226944a63d1bf35a3b5f948dd7c59e263db83695c9e8bffc4037de02e30f1d7"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "cargo_author"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de504504699eeeb1192b78e97e16d58d55685936e352fccd9f3f690ae7f6f9e8"
+dependencies = [
+ "lazy_static",
+ "regex",
+ "unicode-normalization",
 ]
 
 [[package]]
