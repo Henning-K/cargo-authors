@@ -91,7 +91,7 @@ impl<'a> DependencyAccumulator<'a> {
         // cargo::ops::metadata_full()/output_metadata() hinders evaluation
         let specs = Packages::All.to_package_id_specs(&ws)?;
         let deps = ops::resolve_ws_with_opts(&ws, ResolveOpts::everything(), &specs)?;
-        let (package_set, _resolve) = deps;
+        let package_set = deps.pkg_set;
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
