@@ -10,8 +10,8 @@ use cargo::CliResult;
 extern crate cargo_author;
 use cargo_author::Author;
 
-extern crate ripemd160;
-use ripemd160::{Digest, Ripemd160};
+extern crate ripemd;
+use ripemd::{Digest, Ripemd160};
 
 extern crate serde;
 use serde::{Deserialize, Serialize};
