@@ -2,7 +2,7 @@ extern crate cargo;
 use cargo::core::compiler::RustcTargetData;
 use cargo::core::resolver::{ForceAllTargets, HasDevUnits};
 use cargo::core::Workspace;
-use cargo::core::{resolver::ResolveOpts, shell::Shell};
+use cargo::core::{resolver::CliFeatures, shell::Shell};
 use cargo::ops::{self, Packages};
 use cargo::util::{CargoResult, CliError, Config};
 use cargo::CliResult;
@@ -10,8 +10,8 @@ use cargo::CliResult;
 extern crate cargo_author;
 use cargo_author::Author;
 
-extern crate ripemd160;
-use ripemd160::{Digest, Ripemd160};
+extern crate ripemd;
+use ripemd::{Digest, Ripemd160};
 
 extern crate serde;
 use serde::{Deserialize, Serialize};
@@ -88,7 +88,7 @@ impl<'a> DependencyAccumulator<'a> {
             &ws,
             &target_data,
             &[],
-            &ResolveOpts::everything(),
+            &CliFeatures::new_all(true),
             &specs,
             HasDevUnits::Yes,
             ForceAllTargets::Yes,
