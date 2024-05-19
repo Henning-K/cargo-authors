@@ -3,8 +3,8 @@ use cargo::core::compiler::RustcTargetData;
 use cargo::core::resolver::{ForceAllTargets, HasDevUnits};
 use cargo::core::Workspace;
 use cargo::core::{resolver::CliFeatures, shell::Shell};
-use cargo::ops::{self, Packages};
-use cargo::util::{CargoResult, CliError, Config};
+use cargo::ops;
+use cargo::util::{CargoResult, CliError, context::GlobalContext as GCTXT};
 use cargo::CliResult;
 
 extern crate cargo_author;
@@ -16,8 +16,8 @@ use ripemd::{Digest, Ripemd160};
 extern crate serde;
 use serde::{Deserialize, Serialize};
 
-extern crate docopt;
-use docopt::Docopt;
+extern crate clap;
+use clap::Parser;
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -25,22 +25,37 @@ use std::{
     path::Path,
 };
 
-const USAGE: &str = r"
-List all authors of all dependencies of the current crate.
-
-Usage:
-  cargo authors [options] [<path>]
-  cargo authors (-h | --help)
-
-Options:
-  -h --help             Print this message.
-  -j --json             Write machine-readable (JSON) output to stdout.
-  -i --ignore-self      Don't output author and package name of the current crate.
-  -a --hide-authors     Replace all authors with their respective hashes in the output.
-  -e --hide-emails      Replace all emails with their respective hashes in the output.
-  -c --hide-crates      Replace all crates with their respective hashes in the output.
-     --by-crate         Show the output grouped by the crate name.
-";
+#[derive(Clone, Debug, Parser)]
+#[command(version, about="List all authors of all dependencies of the current crate.", long_about=None)]
+struct Flags {
+    /// Write machine-readable (JSON) output to stdout.
+    #[arg(short, long, action=clap::ArgAction::SetTrue)]
+    json: bool,
+    
+    /// Replace all authors with their respective hashes in the output.
+    #[arg(short='a', long, action=clap::ArgAction::SetTrue)]
+    hide_authors: bool,
+    
+    /// Replace all emails with their respective hashes in the output.
+    #[arg(short='e', long, action=clap::ArgAction::SetTrue)]
+    hide_emails: bool,
+    
+    /// Replace all crates with their respective hashes in the output.
+    #[arg(short='c', long, action=clap::ArgAction::SetTrue)]
+    hide_crates: bool,
+    
+    /// Don't output author and package name of the current crate.
+    #[arg(short='i', long, action=clap::ArgAction::SetTrue)]
+    ignore_self: bool,
+    
+    /// Show the output grouped by the crate name.
+    #[arg(long, action=clap::ArgAction::SetTrue)]
+    by_crate: bool,
+    
+    /// Optional path
+    #[arg(short, long, value_name="path")]
+    path: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 struct AuthorsResult {
@@ -55,41 +70,40 @@ impl AuthorsResult {
 
 #[derive(Clone)]
 struct DependencyAccumulator<'a> {
-    config: &'a Config,
+    gctxt: &'a GCTXT,
     flags: Flags,
 }
 
 type Aggregate = CargoResult<BTreeMap<String, HashSet<String>>>;
 
 impl<'a> DependencyAccumulator<'a> {
-    fn new(c: &'a Config, flags: Flags) -> Self {
-        DependencyAccumulator { config: c, flags }
+    fn new(c: &'a GCTXT, flags: Flags) -> Self {
+        DependencyAccumulator { gctxt: c, flags }
     }
 
     fn accumulate(&self) -> Aggregate {
         let path = self
             .flags
-            .arg_path
+            .path
             .clone()
             .unwrap_or_else(|| String::from("."));
         let local_root = Path::new(path.as_str()).canonicalize()?;
         let local_root = local_root.as_path();
         let ws_path = local_root.join("Cargo.toml");
-        let ws = Workspace::new(&ws_path, self.config)?;
+        let ws = Workspace::new(&ws_path, self.gctxt)?;
 
         let self_pkg = ws.current()?.name().as_str();
 
         // here starts the code ripped from cargo::ops::cargo_output_metadata.rs
         // because the visibility of the result's (ExportInfo) members returned from
         // cargo::ops::metadata_full()/output_metadata() hinders evaluation
-        let target_data = RustcTargetData::new(&ws, &[])?;
-        let specs = Packages::All.to_package_id_specs(&ws)?;
+        let mut target_data = RustcTargetData::new(&ws, &[])?;
         let deps = ops::resolve_ws_with_opts(
             &ws,
-            &target_data,
+            &mut target_data,
             &[],
             &CliFeatures::new_all(true),
-            &specs,
+            &[],
             HasDevUnits::Yes,
             ForceAllTargets::Yes,
         )?;
@@ -97,24 +111,24 @@ impl<'a> DependencyAccumulator<'a> {
         // here ends the ripped code
 
         let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
-        for pkg in package_set.get_many(package_set.package_ids())? {
+        for pkg in package_set.packages() {
             let package = pkg.clone();
-            let name = if self.flags.flag_hide_crates {
+            let name = if self.flags.hide_crates {
                 format!("{:x}", Ripemd160::digest(package.name().as_bytes()))
             } else {
                 package.name().to_string()
             };
-            if name == self_pkg && self.flags.flag_ignore_self {
+            if name == self_pkg && self.flags.ignore_self {
                 continue;
             }
             let authors = package.authors().iter().map(|e| {
-                if self.flags.flag_hide_authors {
+                if self.flags.hide_authors {
                     format!("{:x}", Ripemd160::digest(e.as_bytes()))
-                } else if self.flags.flag_hide_emails {
+                } else if self.flags.hide_emails {
                     let author = Author::new(e);
                     format!(
                         "{}{}{}",
-                        author.name.as_ref().map(|s| s.as_str()).unwrap_or_default(),
+                        author.name.as_deref().unwrap_or_default(),
                         if author.name.is_some() && author.email.is_some() {
                             " "
                         } else {
@@ -131,16 +145,16 @@ impl<'a> DependencyAccumulator<'a> {
                 }
             });
             for auth in authors {
-                let crates = result.entry(auth).or_insert_with(HashSet::new);
+                let crates = result.entry(auth).or_default();
                 crates.insert(name.to_string());
             }
         }
 
-        if self.flags.flag_by_crate {
+        if self.flags.by_crate {
             let mut result_: BTreeMap<String, HashSet<String>> = BTreeMap::new();
             for (k, vs) in result.iter() {
                 for v in vs.iter().cloned() {
-                    let authors = result_.entry(v).or_insert_with(HashSet::new);
+                    let authors = result_.entry(v).or_default();
                     authors.insert(k.clone());
                 }
             }
@@ -151,19 +165,8 @@ impl<'a> DependencyAccumulator<'a> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-struct Flags {
-    flag_json: bool,
-    flag_by_crate: bool,
-    flag_hide_authors: bool,
-    flag_hide_emails: bool,
-    flag_hide_crates: bool,
-    flag_ignore_self: bool,
-    arg_path: Option<String>,
-}
-
-fn real_main(flags: Flags, config: &Config) -> CliResult {
-    let aggregate = match DependencyAccumulator::new(config, flags.clone()).accumulate() {
+fn real_main(flags: Flags, gctxt: &GCTXT) -> CliResult {
+    let aggregate = match DependencyAccumulator::new(gctxt, flags.clone()).accumulate() {
         Err(ref e) => {
             println!("error: {}", e);
 
@@ -183,9 +186,9 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
         .keys()
         .map(|e| e.len())
         .max()
-        .expect("No authors found.");
+        .unwrap_or_default();
 
-    if flags.flag_json {
+    if flags.json {
         let ar = AuthorsResult::new(aggregate);
         let ar_json = serde_json::to_string(&ar).unwrap();
         println!("{}", ar_json);
@@ -203,7 +206,7 @@ fn real_main(flags: Flags, config: &Config) -> CliResult {
 }
 
 fn main() {
-    let config = match Config::default() {
+    let gctxt = match GCTXT::default() {
         Ok(cfg) => cfg,
         Err(e) => {
             cargo::exit_with_error(e.into(), &mut Shell::new());
@@ -218,17 +221,11 @@ fn main() {
                 })
             })
             .collect::<Result<_, CliError>>()?;
-        let rest = &args;
 
-        let flags: Flags = Docopt::new(USAGE)
-            .and_then(|d| d.argv(rest.iter()).deserialize())
-            .unwrap_or_else(|e| e.exit());
+        let flags: Flags = Flags::parse_from(args.iter().skip(1));
 
-        real_main(flags, &config)
+        real_main(flags, &gctxt)
     })();
 
-    match result {
-        Err(e) => cargo::exit_with_error(e, &mut *config.shell()),
-        Ok(()) => {}
-    }
+    if let Err(e) = result { cargo::exit_with_error(e, &mut gctxt.shell())}
 }
