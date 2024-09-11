@@ -7,11 +7,12 @@ license = "MIT/Apache-2.0"
 name = "cargo-authors"
 readme = "README.md"
 repository = "https://github.com/Henning-K/cargo-authors"
-version = "0.5.4"
+version = "0.5.5"
+edition = "2021"
 
 [dependencies]
 anyhow = "1"
-cargo = "0.79"
+cargo = "0.82"
 cargo_author = "1.0"
 clap = {version="4.5.4", features = ["derive"]}
 ripemd = "0.1"

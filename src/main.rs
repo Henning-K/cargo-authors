@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 extern crate cargo;
 use cargo::core::compiler::RustcTargetData;
 use cargo::core::resolver::{ForceAllTargets, HasDevUnits};
@@ -106,6 +108,7 @@ impl<'a> DependencyAccumulator<'a> {
             &[],
             HasDevUnits::Yes,
             ForceAllTargets::Yes,
+            false // dry run? no, this is always a "real" run
         )?;
         let package_set = deps.pkg_set;
         // here ends the ripped code
