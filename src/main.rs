@@ -224,8 +224,8 @@ fn main() {
                 })
             })
             .collect::<Result<_, CliError>>()?;
-
-        let flags: Flags = Flags::parse_from(args.iter().skip(1));
+        let flags: Flags = Flags::parse_from(args.iter());
+        
 
         real_main(flags, &gctxt)
     })();
